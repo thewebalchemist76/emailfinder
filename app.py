@@ -13,10 +13,10 @@ app = Flask(__name__, static_folder='.')
 CORS(app)
 
 # ===== CONFIGURAZIONE =====
-MAX_DOMAINS_PER_REQUEST = 20  # Limita domini per richiesta
-REQUEST_TIMEOUT = 25  # Timeout prima del limite Render (30s)
-SCRAPING_TIMEOUT = 5  # Timeout per ogni richiesta HTTP
-DELAY_BETWEEN_REQUESTS = 0.2  # Delay tra richieste
+MAX_DOMAINS_PER_REQUEST = 10  # Limita domini per richiesta (RIDOTTO per evitare crash)
+REQUEST_TIMEOUT = 28  # Timeout prima del limite Render (30s)
+SCRAPING_TIMEOUT = 3  # Timeout per ogni richiesta HTTP (RIDOTTO per velocità)
+DELAY_BETWEEN_REQUESTS = 0.1  # Delay tra richieste (RIDOTTO)
 
 # ===== SERVE FRONTEND =====
 @app.route('/')
@@ -53,16 +53,13 @@ def extract_emails_from_text(text, domain):
     return list(filtered_emails)
 
 def scrape_website(domain):
-    """Scarica e analizza le pagine del sito per trovare email (OTTIMIZZATO)"""
+    """Scarapa e analizza le pagine del sito per trovare email (ULTRA-OTTIMIZZATO)"""
     clean_dom = clean_domain(domain)
     
-    # SOLO I PATH PIÙ IMPORTANTI per velocità
+    # SOLO 2 PATH per massima velocità
     paths = [
         '',           # homepage
-        '/contatti',  # contatti IT
-        '/contattaci',
-        '/contact',   # contatti EN
-        '/contact-us'
+        '/contatti'   # contatti (IT)
     ]
     
     all_emails = set()
