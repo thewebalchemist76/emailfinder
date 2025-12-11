@@ -15,8 +15,8 @@ CORS(app)
 # ===== CONFIGURAZIONE =====
 MAX_DOMAINS_PER_REQUEST = 10  # Limita domini per richiesta (RIDOTTO per evitare crash)
 REQUEST_TIMEOUT = 28  # Timeout prima del limite Render (30s)
-SCRAPING_TIMEOUT = 3  # Timeout per ogni richiesta HTTP (RIDOTTO per velocità)
-DELAY_BETWEEN_REQUESTS = 0.1  # Delay tra richieste (RIDOTTO)
+SCRAPING_TIMEOUT = 2  # Timeout per ogni richiesta HTTP (ULTRA-RIDOTTO)
+DELAY_BETWEEN_REQUESTS = 0.05  # Delay tra richieste (ULTRA-RIDOTTO)
 
 # ===== SERVE FRONTEND =====
 @app.route('/')
@@ -42,6 +42,13 @@ def extract_emails_from_text(text, domain):
     filtered_emails = set()
     for email in emails:
         email_lower = email.lower()
+        
+        # PULIZIA: Rimuovi caratteri non validi alla fine (es. "info@domain.itciao" -> "info@domain.it")
+        # Un'email valida finisce con il TLD (2-6 caratteri)
+        email_clean = re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', email_lower)
+        if email_clean:
+            email_lower = email_clean.group(0)
+        
         if (
             domain in email_lower or 
             domain_base in email_lower or
@@ -83,8 +90,11 @@ def scrape_website(domain):
                 # Metodo 1: mailto:
                 mailto_links = soup.find_all('a', href=re.compile(r'^mailto:'))
                 for link in mailto_links:
-                    email = link.get('href').replace('mailto:', '').split('?')[0]
-                    all_emails.add(email.lower())
+                    email = link.get('href').replace('mailto:', '').split('?')[0].strip()
+                    # Pulizia email da mailto
+                    email_clean = re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', email.lower())
+                    if email_clean:
+                        all_emails.add(email_clean.group(0))
                 
                 # Metodo 2: testo visibile
                 text = soup.get_text()
@@ -93,11 +103,10 @@ def scrape_website(domain):
                 
                 # Metodo 3: attributi data-email
                 for tag in soup.find_all(attrs={'data-email': True}):
-                    all_emails.add(tag['data-email'].lower())
-                
-                # Se hai già trovato email, fermati (ottimizzazione)
-                if len(all_emails) >= 3:
-                    break
+                    email = tag['data-email'].strip()
+                    email_clean = re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', email.lower())
+                    if email_clean:
+                        all_emails.add(email_clean.group(0))
                     
                 time.sleep(DELAY_BETWEEN_REQUESTS)
                 
@@ -111,7 +120,17 @@ def scrape_website(domain):
             print(f"Errore generale su {url}: {str(e)}")
             continue
     
-    return list(all_emails)
+    # RIMOZIONE DUPLICATI E PULIZIA FINALE
+    cleaned_emails = set()
+    for email in all_emails:
+        # Ulteriore pulizia: rimuovi spazi, caratteri speciali
+        email = email.strip().lower()
+        # Verifica che sia una email valida
+        if re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}$', email):
+            cleaned_emails.add(email)
+    
+    # Converti in lista ordinata (per consistenza)
+    return sorted(list(cleaned_emails))
 
 # ===== API STATUS =====
 @app.route('/api/status')
