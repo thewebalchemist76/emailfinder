@@ -57,12 +57,12 @@
                 <input 
                     type="number" 
                     id="batchSize" 
-                    value="20"
+                    value="10"
                     min="5"
-                    max="50"
+                    max="15"
                     class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none"
                 />
-                <p class="text-xs text-gray-500 mt-2">Numero di domini da processare per ogni batch (consigliato: 20)</p>
+                <p class="text-xs text-gray-500 mt-2">Numero di domini da processare per ogni batch (consigliato: 10)</p>
             </div>
         </div>
         
@@ -176,11 +176,11 @@
             <ul class="text-sm text-indigo-800 space-y-2">
                 <li class="flex items-start gap-2">
                     <span class="text-indigo-600 font-bold">•</span>
-                    <span><strong>Batch automatico:</strong> processa liste grandi (100+) dividendole in gruppi da 20</span>
+                    <span><strong>Batch automatico:</strong> processa liste grandi in gruppi da 10 (ottimizzato per Render free tier)</span>
                 </li>
                 <li class="flex items-start gap-2">
                     <span class="text-indigo-600 font-bold">•</span>
-                    <span><strong>Backend Python:</strong> analizza homepage, /contatti, /contact per ogni dominio</span>
+                    <span><strong>Backend Python:</strong> analizza homepage + /contatti per ogni dominio</span>
                 </li>
                 <li class="flex items-start gap-2">
                     <span class="text-indigo-600 font-bold">•</span>
@@ -196,7 +196,7 @@
                 </li>
                 <li class="flex items-start gap-2">
                     <span class="text-indigo-600 font-bold">•</span>
-                    <span><strong>Timeout protection:</strong> evita errori 502 con gestione intelligente</span>
+                    <span><strong>Timeout protection:</strong> evita errori 502 con gestione intelligente e pause tra batch</span>
                 </li>
             </ul>
         </div>
@@ -266,7 +266,7 @@
             document.getElementById('timeInfo').textContent = `Tempo: ${elapsed}s`;
         }
         
-        // ===== SEARCH EMAILS (CON BATCH) =====
+        // ===== SEARCH EMAILS (CON BATCH E RETRY) =====
         async function searchEmails() {
             if (isSearching) {
                 alert('Ricerca già in corso');
@@ -275,7 +275,7 @@
             
             const domainsText = document.getElementById('domains').value;
             const apiUrl = document.getElementById('apiUrl').value;
-            const batchSize = parseInt(document.getElementById('batchSize').value) || 20;
+            const batchSize = parseInt(document.getElementById('batchSize').value) || 10;
             
             const domainList = domainsText
                 .split('\n')
@@ -308,15 +308,12 @@
             
             let processedDomains = 0;
             
-            try {
-                for (let i = 0; i < batches.length; i++) {
-                    const batch = batches[i];
-                    
-                    console.log(`\n🚀 Batch ${i + 1}/${batches.length}: ${batch.length} domini`);
-                    
-                    updateProgress(processedDomains, domainList.length, i + 1, batches.length);
-                    
+            // Funzione per processare un batch con retry
+            async function processBatchWithRetry(batch, batchIndex, maxRetries = 3) {
+                for (let attempt = 1; attempt <= maxRetries; attempt++) {
                     try {
+                        console.log(`🚀 Batch ${batchIndex + 1}/${batches.length} - Tentativo ${attempt}/${maxRetries}`);
+                        
                         const response = await fetch(`${apiUrl}/api/find-emails`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -324,48 +321,68 @@
                         });
                         
                         if (!response.ok) {
+                            if (response.status === 502 && attempt < maxRetries) {
+                                console.warn(`⚠️ Errore 502, retry in ${attempt * 2}s...`);
+                                await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+                                continue; // Riprova
+                            }
+                            
                             const errorData = await response.json().catch(() => ({}));
                             throw new Error(`HTTP ${response.status}: ${errorData.error || 'Errore sconosciuto'}`);
                         }
                         
                         const data = await response.json();
                         
-                        if (data.success) {
-                            resultsData = resultsData.concat(data.results);
-                            processedDomains += batch.length;
-                            
-                            // Mostra risultati progressivi
-                            displayResults(resultsData);
-                            document.getElementById('results').classList.remove('hidden');
-                            
-                            console.log(`✅ Batch ${i + 1} completato: ${data.total_emails} email trovate`);
-                        } else {
+                        if (!data.success) {
                             throw new Error('Risposta API non valida');
                         }
                         
-                    } catch (batchError) {
-                        console.error(`❌ Errore batch ${i + 1}:`, batchError);
+                        console.log(`✅ Batch ${batchIndex + 1} completato: ${data.total_emails} email trovate`);
+                        return data.results; // Successo!
                         
-                        // Aggiungi errori per questo batch
-                        batch.forEach(domain => {
-                            resultsData.push({
+                    } catch (error) {
+                        console.error(`❌ Errore batch ${batchIndex + 1}, tentativo ${attempt}:`, error);
+                        
+                        // Se è l'ultimo tentativo, ritorna errori
+                        if (attempt === maxRetries) {
+                            console.error(`💀 Batch ${batchIndex + 1} fallito dopo ${maxRetries} tentativi`);
+                            return batch.map(domain => ({
                                 domain: domain,
                                 emails: [],
                                 count: 0,
                                 status: 'error',
-                                error: batchError.message
-                            });
-                        });
+                                error: `Fallito dopo ${maxRetries} tentativi: ${error.message}`
+                            }));
+                        }
                         
-                        processedDomains += batch.length;
+                        // Altrimenti aspetta prima di riprovare
+                        await new Promise(resolve => setTimeout(resolve, attempt * 2000));
                     }
+                }
+            }
+            
+            try {
+                for (let i = 0; i < batches.length; i++) {
+                    const batch = batches[i];
                     
                     updateProgress(processedDomains, domainList.length, i + 1, batches.length);
                     
-                    // Pausa tra batch (tranne l'ultimo)
+                    // Processa batch con retry automatico
+                    const batchResults = await processBatchWithRetry(batch, i);
+                    
+                    resultsData = resultsData.concat(batchResults);
+                    processedDomains += batch.length;
+                    
+                    // Mostra risultati progressivi
+                    displayResults(resultsData);
+                    document.getElementById('results').classList.remove('hidden');
+                    
+                    updateProgress(processedDomains, domainList.length, i + 1, batches.length);
+                    
+                    // Pausa tra batch (tranne l'ultimo) - AUMENTATA per stabilità Render
                     if (i < batches.length - 1) {
-                        console.log('⏳ Pausa 2s prima del prossimo batch...');
-                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        console.log('⏳ Pausa 5s prima del prossimo batch...');
+                        await new Promise(resolve => setTimeout(resolve, 5000));
                     }
                 }
                 
