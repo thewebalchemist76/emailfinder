@@ -33,29 +33,38 @@ def clean_domain(domain):
     return domain
 
 def extract_emails_from_text(text, domain):
-    """Estrae email dal testo usando regex avanzato"""
-    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
-    emails = re.findall(email_pattern, text)
+    """Estrae email dal testo usando regex STRETTO con pulizia aggressiva"""
+    # Pattern più stretto: cattura SOLO email valide
+    email_pattern = r'\b[A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,6}\b'
+    emails = re.findall(email_pattern, text, re.IGNORECASE)
     
     domain_base = domain.split('.')[0]
     
     filtered_emails = set()
     for email in emails:
-        email_lower = email.lower()
+        email_lower = email.lower().strip()
         
-        # PULIZIA: Rimuovi caratteri non validi alla fine (es. "info@domain.itciao" -> "info@domain.it")
-        # Un'email valida finisce con il TLD (2-6 caratteri)
-        email_clean = re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', email_lower)
-        if email_clean:
-            email_lower = email_clean.group(0)
+        # PULIZIA AGGRESSIVA: Estrai SOLO la parte email valida
+        # Regex che matcha ESATTAMENTE l'email e nient'altro
+        match = re.search(r'^([A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,6})(?:[^A-Za-z0-9._%+-@]|$)', email_lower + ' ')
+        if match:
+            clean_email = match.group(1)
+        else:
+            clean_email = email_lower
         
+        # Verifica finale che sia email valida
+        if not re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}$', clean_email):
+            continue
+        
+        # Filtra per dominio pertinente
         if (
-            domain in email_lower or 
-            domain_base in email_lower or
-            any(x in email_lower for x in ['info@', 'contact@', 'admin@', 'support@', 
-                                           'hello@', 'sales@', 'press@', 'team@'])
+            domain in clean_email or 
+            domain_base in clean_email or
+            any(x in clean_email for x in ['info@', 'contact@', 'admin@', 'support@', 
+                                           'hello@', 'sales@', 'press@', 'team@', 'redazione@',
+                                           'ufficio@', 'amministrazione@', 'commerciale@'])
         ):
-            filtered_emails.add(email_lower)
+            filtered_emails.add(clean_email)
     
     return list(filtered_emails)
 
@@ -90,11 +99,13 @@ def scrape_website(domain):
                 # Metodo 1: mailto:
                 mailto_links = soup.find_all('a', href=re.compile(r'^mailto:'))
                 for link in mailto_links:
-                    email = link.get('href').replace('mailto:', '').split('?')[0].strip()
-                    # Pulizia email da mailto
-                    email_clean = re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', email.lower())
-                    if email_clean:
-                        all_emails.add(email_clean.group(0))
+                    email_raw = link.get('href').replace('mailto:', '').split('?')[0].split(';')[0].strip()
+                    # Estrai SOLO la parte email
+                    match = re.search(r'([A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,6})', email_raw)
+                    if match:
+                        email_clean = match.group(1).lower()
+                        if re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}$', email_clean):
+                            all_emails.add(email_clean)
                 
                 # Metodo 2: testo visibile
                 text = soup.get_text()
@@ -103,10 +114,13 @@ def scrape_website(domain):
                 
                 # Metodo 3: attributi data-email
                 for tag in soup.find_all(attrs={'data-email': True}):
-                    email = tag['data-email'].strip()
-                    email_clean = re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}', email.lower())
-                    if email_clean:
-                        all_emails.add(email_clean.group(0))
+                    email_raw = tag['data-email'].strip()
+                    # Estrai SOLO la parte email
+                    match = re.search(r'([A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,6})', email_raw)
+                    if match:
+                        email_clean = match.group(1).lower()
+                        if re.match(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,6}$', email_clean):
+                            all_emails.add(email_clean)
                     
                 time.sleep(DELAY_BETWEEN_REQUESTS)
                 
