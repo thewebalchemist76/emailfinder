@@ -3,15 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Email Finder Pro</title>
+    <title>Email Finder Pro v2.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; }
+        
+        /* Progress bar animation */
+        @keyframes progress {
+            0% { width: 0%; }
+        }
+        
+        .progress-bar {
+            animation: progress 0.5s ease-out;
+        }
     </style>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
     <div id="app" class="max-w-6xl mx-auto p-4">
+        
         <!-- Header -->
         <div class="bg-white rounded-2xl shadow-xl p-8 mb-6">
             <div class="flex items-center justify-between">
@@ -20,8 +30,8 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                     </svg>
                     <div>
-                        <h1 class="text-3xl font-bold text-gray-800">Email Finder Pro</h1>
-                        <p class="text-gray-600">Estrai email automaticamente dai domini</p>
+                        <h1 class="text-3xl font-bold text-gray-800">Email Finder Pro <span class="text-sm text-indigo-600">v2.0</span></h1>
+                        <p class="text-gray-600">Estrai email automaticamente dai domini (ora con batch processing)</p>
                     </div>
                 </div>
                 <button onclick="toggleSettings()" class="p-3 hover:bg-gray-100 rounded-xl transition-all">
@@ -31,7 +41,7 @@
                     </svg>
                 </button>
             </div>
-
+            
             <!-- Settings Panel -->
             <div id="settings" class="hidden mt-4 p-4 bg-gray-50 rounded-xl border-2 border-gray-200">
                 <label class="block text-sm font-semibold text-gray-700 mb-2">URL Backend API</label>
@@ -42,32 +52,48 @@
                     class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none"
                 />
                 <p class="text-xs text-gray-500 mt-2">Inserisci l'URL del tuo backend su Render</p>
+                
+                <label class="block text-sm font-semibold text-gray-700 mb-2 mt-4">Domini per batch</label>
+                <input 
+                    type="number" 
+                    id="batchSize" 
+                    value="20"
+                    min="5"
+                    max="50"
+                    class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none"
+                />
+                <p class="text-xs text-gray-500 mt-2">Numero di domini da processare per ogni batch (consigliato: 20)</p>
             </div>
         </div>
-
+        
         <!-- Input Section -->
         <div class="bg-white rounded-2xl shadow-xl p-8 mb-6">
-            <label class="block text-sm font-semibold text-gray-700 mb-3">
-                Inserisci i domini (uno per riga)
-            </label>
+            <div class="flex items-center justify-between mb-3">
+                <label class="block text-sm font-semibold text-gray-700">
+                    Inserisci i domini (uno per riga)
+                </label>
+                <span id="domainCount" class="text-xs text-gray-500">0 domini</span>
+            </div>
+            
             <textarea 
                 id="domains"
-                placeholder="21lettere.it&#10;google.com&#10;https://www.example.com"
+                placeholder="21lettere.it&#10;google.com&#10;https://www.example.com&#10;&#10;Puoi incollare anche 100+ domini!&#10;Il sistema li processerà automaticamente in batch."
                 class="w-full h-40 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all resize-none font-mono text-sm"
+                oninput="updateDomainCount()"
             ></textarea>
             
             <div class="flex gap-3 mt-4">
                 <button 
                     onclick="searchEmails()"
                     id="searchBtn"
-                    class="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-all shadow-lg hover:shadow-xl"
+                    class="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-all shadow-lg hover:shadow-xl disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                     </svg>
                     Cerca Email
                 </button>
-
+                
                 <button 
                     onclick="downloadCSV()"
                     id="downloadBtn"
@@ -78,52 +104,123 @@
                     </svg>
                     Scarica CSV
                 </button>
+                
+                <button 
+                    onclick="clearAll()"
+                    class="flex items-center gap-2 px-6 py-3 bg-red-100 text-red-700 rounded-xl font-semibold hover:bg-red-200 transition-all"
+                >
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    Pulisci
+                </button>
             </div>
-
+            
+            <!-- Progress Section -->
+            <div id="progressSection" class="hidden mt-6">
+                <div class="bg-indigo-50 rounded-xl p-4 border-2 border-indigo-100">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-semibold text-indigo-900" id="progressText">Preparazione...</span>
+                        <span class="text-sm text-indigo-700" id="progressPercent">0%</span>
+                    </div>
+                    
+                    <div class="w-full bg-indigo-200 rounded-full h-3 overflow-hidden">
+                        <div id="progressBar" class="progress-bar bg-indigo-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    
+                    <div class="mt-3 flex items-center justify-between text-xs text-indigo-700">
+                        <span id="batchInfo">Batch 0/0</span>
+                        <span id="timeInfo">Tempo: 0s</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Loading legacy (backup) -->
             <div id="loading" class="hidden mt-4">
                 <div class="flex items-center gap-2 text-sm text-gray-600">
                     <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    <span>Scanning dei siti web in corso...</span>
+                    <span>Elaborazione in corso...</span>
                 </div>
             </div>
         </div>
-
+        
         <!-- Results Section -->
         <div id="results" class="hidden bg-white rounded-2xl shadow-xl p-8">
             <div class="flex items-center justify-between mb-6">
                 <h2 class="text-2xl font-bold text-gray-800">Risultati</h2>
-                <div id="totalEmails" class="px-4 py-2 bg-indigo-100 rounded-lg">
-                    <span class="text-indigo-800 font-bold">0</span>
-                    <span class="text-indigo-600 text-sm ml-1">email trovate</span>
+                <div class="flex gap-3">
+                    <div id="totalEmails" class="px-4 py-2 bg-indigo-100 rounded-lg">
+                        <span class="text-indigo-800 font-bold">0</span>
+                        <span class="text-indigo-600 text-sm ml-1">email trovate</span>
+                    </div>
+                    <div id="totalDomains" class="px-4 py-2 bg-green-100 rounded-lg">
+                        <span class="text-green-800 font-bold">0</span>
+                        <span class="text-green-600 text-sm ml-1">domini processati</span>
+                    </div>
                 </div>
             </div>
             <div id="resultsList" class="space-y-4"></div>
         </div>
-
+        
         <!-- Info Box -->
         <div class="mt-6 bg-indigo-50 rounded-xl p-6 border-2 border-indigo-100">
-            <h3 class="font-semibold text-indigo-900 mb-2">🔍 Come funziona:</h3>
-            <ul class="text-sm text-indigo-800 space-y-1">
-                <li>• Backend Python su Render.com analizza i siti web</li>
-                <li>• Cerca automaticamente in: /contatti, /about, /team, homepage</li>
-                <li>• Estrae email da link mailto:, testo HTML e attributi nascosti</li>
-                <li>• Filtra solo email pertinenti al dominio</li>
-                <li>• Esporta risultati in formato CSV</li>
+            <h3 class="font-semibold text-indigo-900 mb-3 flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                Come funziona (v2.0 - Ottimizzato):
+            </h3>
+            <ul class="text-sm text-indigo-800 space-y-2">
+                <li class="flex items-start gap-2">
+                    <span class="text-indigo-600 font-bold">•</span>
+                    <span><strong>Batch automatico:</strong> processa liste grandi (100+) dividendole in gruppi da 20</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <span class="text-indigo-600 font-bold">•</span>
+                    <span><strong>Backend Python:</strong> analizza homepage, /contatti, /contact per ogni dominio</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <span class="text-indigo-600 font-bold">•</span>
+                    <span><strong>Estrazione multipla:</strong> trova email da mailto:, testo HTML, attributi nascosti</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <span class="text-indigo-600 font-bold">•</span>
+                    <span><strong>Smart filtering:</strong> filtra solo email pertinenti al dominio</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <span class="text-indigo-600 font-bold">•</span>
+                    <span><strong>Export CSV:</strong> scarica tutti i risultati con un click</span>
+                </li>
+                <li class="flex items-start gap-2">
+                    <span class="text-indigo-600 font-bold">•</span>
+                    <span><strong>Timeout protection:</strong> evita errori 502 con gestione intelligente</span>
+                </li>
             </ul>
+        </div>
+        
+        <!-- Footer -->
+        <div class="mt-6 text-center text-sm text-gray-600">
+            <p>Powered by Flask + BeautifulSoup | Hosted on Render.com</p>
+            <p class="mt-1">
+                <a href="https://github.com" target="_blank" class="text-indigo-600 hover:underline">View on GitHub</a>
+            </p>
         </div>
     </div>
 
     <script>
         let resultsData = [];
-
+        let isSearching = false;
+        let startTime = 0;
+        
+        // ===== UTILS =====
         function toggleSettings() {
             const settings = document.getElementById('settings');
             settings.classList.toggle('hidden');
         }
-
+        
         function cleanDomain(domain) {
             return domain
                 .replace(/^https?:\/\//, '')
@@ -131,126 +228,278 @@
                 .replace(/\/$/, '')
                 .trim();
         }
-
+        
+        function updateDomainCount() {
+            const domainsText = document.getElementById('domains').value;
+            const domainList = domainsText
+                .split('\n')
+                .map(d => d.trim())
+                .filter(d => d.length > 0);
+            
+            document.getElementById('domainCount').textContent = `${domainList.length} domini`;
+        }
+        
+        function clearAll() {
+            if (isSearching) {
+                alert('Impossibile pulire durante la ricerca');
+                return;
+            }
+            
+            if (confirm('Vuoi pulire tutti i dati?')) {
+                document.getElementById('domains').value = '';
+                document.getElementById('results').classList.add('hidden');
+                document.getElementById('downloadBtn').classList.add('hidden');
+                resultsData = [];
+                updateDomainCount();
+            }
+        }
+        
+        // ===== PROGRESS BAR =====
+        function updateProgress(current, total, batchNum, totalBatches) {
+            const percent = Math.round((current / total) * 100);
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+            
+            document.getElementById('progressBar').style.width = `${percent}%`;
+            document.getElementById('progressPercent').textContent = `${percent}%`;
+            document.getElementById('progressText').textContent = `Elaborazione domini ${current}/${total}`;
+            document.getElementById('batchInfo').textContent = `Batch ${batchNum}/${totalBatches}`;
+            document.getElementById('timeInfo').textContent = `Tempo: ${elapsed}s`;
+        }
+        
+        // ===== SEARCH EMAILS (CON BATCH) =====
         async function searchEmails() {
+            if (isSearching) {
+                alert('Ricerca già in corso');
+                return;
+            }
+            
             const domainsText = document.getElementById('domains').value;
             const apiUrl = document.getElementById('apiUrl').value;
+            const batchSize = parseInt(document.getElementById('batchSize').value) || 20;
             
             const domainList = domainsText
                 .split('\n')
                 .map(d => d.trim())
                 .filter(d => d.length > 0)
                 .map(d => cleanDomain(d));
-
+            
             if (domainList.length === 0) {
                 alert('Inserisci almeno un dominio');
                 return;
             }
-
-            // Show loading
-            document.getElementById('loading').classList.remove('hidden');
+            
+            // Crea i batch
+            const batches = [];
+            for (let i = 0; i < domainList.length; i += batchSize) {
+                batches.push(domainList.slice(i, i + batchSize));
+            }
+            
+            console.log(`📊 Totale domini: ${domainList.length}`);
+            console.log(`📦 Numero di batch: ${batches.length} (${batchSize} domini/batch)`);
+            
+            // UI Setup
+            isSearching = true;
+            startTime = Date.now();
+            document.getElementById('progressSection').classList.remove('hidden');
             document.getElementById('searchBtn').disabled = true;
             document.getElementById('results').classList.add('hidden');
-
+            document.getElementById('downloadBtn').classList.add('hidden');
+            resultsData = [];
+            
+            let processedDomains = 0;
+            
             try {
-                const response = await fetch(`${apiUrl}/api/find-emails`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ domains: domainList })
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Errore HTTP: ${response.status}`);
+                for (let i = 0; i < batches.length; i++) {
+                    const batch = batches[i];
+                    
+                    console.log(`\n🚀 Batch ${i + 1}/${batches.length}: ${batch.length} domini`);
+                    
+                    updateProgress(processedDomains, domainList.length, i + 1, batches.length);
+                    
+                    try {
+                        const response = await fetch(`${apiUrl}/api/find-emails`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ domains: batch })
+                        });
+                        
+                        if (!response.ok) {
+                            const errorData = await response.json().catch(() => ({}));
+                            throw new Error(`HTTP ${response.status}: ${errorData.error || 'Errore sconosciuto'}`);
+                        }
+                        
+                        const data = await response.json();
+                        
+                        if (data.success) {
+                            resultsData = resultsData.concat(data.results);
+                            processedDomains += batch.length;
+                            
+                            // Mostra risultati progressivi
+                            displayResults(resultsData);
+                            document.getElementById('results').classList.remove('hidden');
+                            
+                            console.log(`✅ Batch ${i + 1} completato: ${data.total_emails} email trovate`);
+                        } else {
+                            throw new Error('Risposta API non valida');
+                        }
+                        
+                    } catch (batchError) {
+                        console.error(`❌ Errore batch ${i + 1}:`, batchError);
+                        
+                        // Aggiungi errori per questo batch
+                        batch.forEach(domain => {
+                            resultsData.push({
+                                domain: domain,
+                                emails: [],
+                                count: 0,
+                                status: 'error',
+                                error: batchError.message
+                            });
+                        });
+                        
+                        processedDomains += batch.length;
+                    }
+                    
+                    updateProgress(processedDomains, domainList.length, i + 1, batches.length);
+                    
+                    // Pausa tra batch (tranne l'ultimo)
+                    if (i < batches.length - 1) {
+                        console.log('⏳ Pausa 2s prima del prossimo batch...');
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
                 }
-
-                const data = await response.json();
                 
-                if (data.success) {
-                    resultsData = data.results;
-                    displayResults(data.results);
-                    document.getElementById('downloadBtn').classList.remove('hidden');
-                } else {
-                    alert('Errore nella ricerca');
-                }
+                // Completamento
+                const totalEmails = resultsData.reduce((acc, r) => acc + r.count, 0);
+                const totalTime = Math.round((Date.now() - startTime) / 1000);
+                
+                console.log(`\n✨ COMPLETATO!`);
+                console.log(`📧 Email totali: ${totalEmails}`);
+                console.log(`🌐 Domini processati: ${resultsData.length}`);
+                console.log(`⏱️ Tempo totale: ${totalTime}s`);
+                
+                document.getElementById('downloadBtn').classList.remove('hidden');
+                
+                alert(`✅ Ricerca completata!\n\n📧 ${totalEmails} email trovate\n🌐 ${resultsData.length} domini processati\n⏱️ ${totalTime} secondi`);
+                
             } catch (error) {
-                console.error('Errore:', error);
-                alert(`Errore di connessione: ${error.message}\n\nAssicurati che il backend sia online su ${apiUrl}`);
+                console.error('❌ Errore generale:', error);
+                alert(`Errore: ${error.message}\n\nRisultati parziali: ${resultsData.length} domini`);
+                
+                if (resultsData.length > 0) {
+                    displayResults(resultsData);
+                    document.getElementById('results').classList.remove('hidden');
+                    document.getElementById('downloadBtn').classList.remove('hidden');
+                }
             } finally {
-                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('progressSection').classList.add('hidden');
                 document.getElementById('searchBtn').disabled = false;
+                isSearching = false;
             }
         }
-
+        
+        // ===== DISPLAY RESULTS =====
         function displayResults(results) {
-            const totalEmails = results.reduce((acc, r) => acc + r.emails.length, 0);
+            const totalEmails = results.reduce((acc, r) => acc + r.count, 0);
+            const successCount = results.filter(r => r.status === 'success' && r.count > 0).length;
+            
             document.getElementById('totalEmails').innerHTML = `
                 <span class="text-indigo-800 font-bold">${totalEmails}</span>
                 <span class="text-indigo-600 text-sm ml-1">email trovate</span>
             `;
-
+            
+            document.getElementById('totalDomains').innerHTML = `
+                <span class="text-green-800 font-bold">${results.length}</span>
+                <span class="text-green-600 text-sm ml-1">domini processati</span>
+            `;
+            
             const resultsList = document.getElementById('resultsList');
-            resultsList.innerHTML = results.map(result => `
-                <div class="border-2 border-gray-100 rounded-xl p-5 hover:border-indigo-200 transition-all">
-                    <div class="flex items-start justify-between mb-3">
-                        <div class="flex items-center gap-3">
-                            ${result.status === 'success' && result.emails.length > 0 ? `
-                                <svg class="w-6 h-6 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                            ` : `
-                                <svg class="w-6 h-6 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                            `}
-                            <div>
-                                <h3 class="font-bold text-lg text-gray-800">${result.domain}</h3>
-                                <p class="text-sm text-gray-500">${result.count} email trovate</p>
+            resultsList.innerHTML = results.map(result => {
+                let statusIcon, statusColor;
+                
+                if (result.status === 'success' && result.count > 0) {
+                    statusIcon = `
+                        <svg class="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    `;
+                    statusColor = 'border-green-200 bg-green-50';
+                } else if (result.status === 'error' || result.status === 'timeout') {
+                    statusIcon = `
+                        <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    `;
+                    statusColor = 'border-red-200 bg-red-50';
+                } else {
+                    statusIcon = `
+                        <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                        </svg>
+                    `;
+                    statusColor = 'border-gray-200 bg-gray-50';
+                }
+                
+                return `
+                    <div class="border-2 ${statusColor} rounded-xl p-5 hover:shadow-md transition-all">
+                        <div class="flex items-start justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                                ${statusIcon}
+                                <div>
+                                    <h3 class="font-bold text-lg text-gray-800">${result.domain}</h3>
+                                    <p class="text-sm text-gray-600">
+                                        ${result.count} email • Status: ${result.status}
+                                        ${result.error ? `<span class="text-red-600"> (${result.error})</span>` : ''}
+                                    </p>
+                                </div>
                             </div>
                         </div>
+                        
+                        ${result.emails && result.emails.length > 0 ? `
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 ml-9">
+                                ${result.emails.map(email => `
+                                    <div class="flex items-center gap-2 px-3 py-2 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition-all">
+                                        <svg class="w-4 h-4 text-indigo-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                        </svg>
+                                        <a href="mailto:${email}" class="text-sm font-mono text-gray-700 hover:text-indigo-600">${email}</a>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : `
+                            <p class="text-gray-400 ml-9 text-sm italic">Nessuna email trovata</p>
+                        `}
                     </div>
-                    
-                    ${result.emails.length > 0 ? `
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 ml-9">
-                            ${result.emails.map(email => `
-                                <div class="flex items-center gap-2 px-3 py-2 bg-indigo-50 rounded-lg">
-                                    <svg class="w-4 h-4 text-indigo-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                                    </svg>
-                                    <span class="text-sm font-mono text-gray-700">${email}</span>
-                                </div>
-                            `).join('')}
-                        </div>
-                    ` : `
-                        <p class="text-gray-400 ml-9 text-sm">Nessuna email trovata</p>
-                    `}
-                </div>
-            `).join('');
-
-            document.getElementById('results').classList.remove('hidden');
+                `;
+            }).join('');
         }
-
+        
+        // ===== DOWNLOAD CSV =====
         function downloadCSV() {
-            const rows = [['Dominio', 'Email', 'Count']];
+            const rows = [['Dominio', 'Email', 'Status', 'Count']];
             
             resultsData.forEach(result => {
-                if (result.emails.length > 0) {
+                if (result.emails && result.emails.length > 0) {
                     result.emails.forEach(email => {
-                        rows.push([result.domain, email, '1']);
+                        rows.push([result.domain, email, result.status, '1']);
                     });
                 } else {
-                    rows.push([result.domain, 'Nessuna email trovata', '0']);
+                    rows.push([result.domain, 'Nessuna email trovata', result.status, '0']);
                 }
             });
-
-            const csv = rows.map(row => row.join(',')).join('\n');
+            
+            const csv = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = `email_results_${new Date().toISOString().split('T')[0]}.csv`;
             link.click();
+            
+            console.log('📥 CSV scaricato con', resultsData.length, 'righe');
         }
+        
+        // Init
+        updateDomainCount();
     </script>
 </body>
 </html>
